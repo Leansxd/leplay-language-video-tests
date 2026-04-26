@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, RotateCcw, Trophy, CheckCircle2, XCircle, ArrowRight } from 'lucide-react';
+import ReactPlayer from 'react-player';
 import { videos } from './data/videos';
 import './index.css';
 
@@ -11,14 +12,14 @@ const App = () => {
   const [score, setScore] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);
   const [hasAnswered, setHasAnswered] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   
-  const videoRef = useRef(null);
+  const playerRef = useRef(null);
   const currentVideo = videos[currentIndex];
 
   const startVideo = () => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = currentVideo.startTime;
-      videoRef.current.play();
+    if (playerRef.current) {
+      playerRef.current.seekTo(currentVideo.startTime, 'seconds');
       setIsPlaying(true);
       setShowQuiz(false);
       setHasAnswered(false);
@@ -26,9 +27,11 @@ const App = () => {
     }
   };
 
-  const handleVideoEnd = () => {
-    setIsPlaying(false);
-    setShowQuiz(true);
+  const handleProgress = (state) => {
+    if (isPlaying && state.playedSeconds >= currentVideo.endTime) {
+      setIsPlaying(false);
+      setShowQuiz(true);
+    }
   };
 
   const handleOptionClick = (option) => {
@@ -48,26 +51,10 @@ const App = () => {
     setShowQuiz(false);
     setHasAnswered(false);
     setSelectedOption(null);
-    // Auto start next video
-    setTimeout(() => {
-      setIsPlaying(true);
-    }, 100);
+    setIsReady(false);
+    // Auto start will be handled by onReady if needed, 
+    // but here we wait for user to click play or use a timeout
   };
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const checkTime = () => {
-      if (video.currentTime >= currentVideo.endTime) {
-        video.pause();
-        handleVideoEnd();
-      }
-    };
-
-    video.addEventListener('timeupdate', checkTime);
-    return () => video.removeEventListener('timeupdate', checkTime);
-  }, [currentIndex, currentVideo.endTime]);
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 md:p-8">
@@ -90,16 +77,27 @@ const App = () => {
 
       <main className="w-full max-w-4xl relative">
         {/* Video Stage */}
-        <div className="video-container glass-card mb-8">
-          <video
-            ref={videoRef}
-            src={currentVideo.url}
-            onEnded={handleVideoEnd}
-            playsInline
+        <div className="video-container glass-card mb-4 overflow-hidden relative" style={{ background: '#000' }}>
+          <ReactPlayer
+            ref={playerRef}
+            url={currentVideo.url}
+            playing={isPlaying}
+            onProgress={handleProgress}
+            onReady={() => {
+              setIsReady(true);
+              playerRef.current.seekTo(currentVideo.startTime, 'seconds');
+            }}
+            width="100%"
+            height="100%"
+            config={{
+              youtube: {
+                playerVars: { disablekb: 1, controls: 0, rel: 0 }
+              }
+            }}
           />
           
           {!isPlaying && !showQuiz && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] z-20">
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
@@ -112,7 +110,7 @@ const App = () => {
           )}
 
           {isPlaying && (
-            <div className="status-indicator">
+            <div className="status-indicator z-20">
               <span className="px-3 py-1 bg-red-500/80 rounded-full text-xs font-bold animate-pulse">İZLENİYOR</span>
             </div>
           )}
