@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play, RotateCcw, Trophy, CheckCircle2, XCircle,
@@ -7,59 +7,146 @@ import {
 import videosData from './data/videos.json';
 import './index.css';
 
-const App = () => {
+const shuffle = (arr) => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+// YouTube IFrame API'yi yükle
+function loadYTApi() {
+  return new Promise((resolve) => {
+    if (window.YT && window.YT.Player) { resolve(window.YT); return; }
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+    window.onYouTubeIframeAPIReady = () => resolve(window.YT);
+  });
+}
+
+const getVideoId = (url) => {
+  const m = url.match(/(?:v=|youtu\.be\/)([^&\n?#]+)/);
+  return m ? m[1] : null;
+};
+
+export default function App() {
+  const [videos] = useState(() => shuffle(videosData));
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [phase, setPhase] = useState('idle'); // idle | playing | quiz
+  const [phase, setPhase] = useState('idle');
   const [score, setScore] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);
   const [hasAnswered, setHasAnswered] = useState(false);
-  const [subtitles, setSubtitles] = useState(false); // altyazı kapalı varsayılan
+  const [subtitles, setSubtitles] = useState(false);
 
+  const ytPlayer = useRef(null);
   const timerRef = useRef(null);
-  const videos = videosData;
+  const phaseRef = useRef('idle');
+  const containerRef = useRef(null);
+
   const currentVideo = videos[currentIndex];
-  const duration = Math.ceil(currentVideo.endTime - currentVideo.startTime);
-
-  const getVideoId = (url) => {
-    const m = url.match(/(?:v=|youtu\.be\/)([^&\n?#]+)/);
-    return m ? m[1] : null;
-  };
-
   const videoId = getVideoId(currentVideo.url);
 
-  // cc_load_policy=1 altyazı açık, 0 kapalı
-  const embedUrl = videoId
-    ? `https://www.youtube.com/embed/${videoId}?autoplay=1&controls=0&start=${Math.floor(currentVideo.startTime)}&end=${Math.ceil(currentVideo.endTime)}&rel=0&modestbranding=1&iv_load_policy=3&cc_load_policy=${subtitles ? 1 : 0}&hl=en`
-    : null;
-
-  const handleStart = () => {
-    setPhase('playing');
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setPhase('quiz'), duration * 1000);
+  // faz değişikliklerini ref'e yansıt
+  const setPhaseSync = (p) => {
+    phaseRef.current = p;
+    setPhase(p);
   };
 
-  const handleReplay = () => {
-    clearTimeout(timerRef.current);
-    setPhase('idle');
+  // Belirli aralıklarla zamanı kontrol et
+  const startTimeChecker = useCallback(() => {
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      if (!ytPlayer.current || phaseRef.current !== 'playing') return;
+      const t = ytPlayer.current.getCurrentTime();
+      if (t >= currentVideo.endTime) {
+        clearInterval(timerRef.current);
+        ytPlayer.current.pauseVideo();
+        setPhaseSync('quiz');
+      }
+    }, 100);
+  }, [currentVideo.endTime]);
+
+  // YouTube player'ı başlat veya yenile
+  useEffect(() => {
+    let cancelled = false;
+
+    loadYTApi().then((YT) => {
+      if (cancelled) return;
+
+      // Eski player'ı temizle
+      if (ytPlayer.current) {
+        ytPlayer.current.destroy();
+        ytPlayer.current = null;
+      }
+
+      ytPlayer.current = new YT.Player('yt-player-container', {
+        videoId,
+        playerVars: {
+          rel: 0,
+          modestbranding: 1,
+          iv_load_policy: 3,
+          controls: 0,
+          disablekb: 1,
+          cc_load_policy: subtitles ? 1 : 0,
+          start: Math.floor(currentVideo.startTime),
+        },
+        events: {
+          onReady: (e) => {
+            e.target.seekTo(currentVideo.startTime, true);
+          },
+          onStateChange: (e) => {
+            // Bitiş zamanını burada da kontrol et
+            if (e.data === YT.PlayerState.ENDED && phaseRef.current === 'playing') {
+              clearInterval(timerRef.current);
+              setPhaseSync('quiz');
+            }
+          }
+        }
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      clearInterval(timerRef.current);
+    };
+  }, [currentIndex, subtitles]);
+
+  const handleStart = useCallback(() => {
+    if (!ytPlayer.current) return;
+    ytPlayer.current.seekTo(currentVideo.startTime, true);
+    ytPlayer.current.playVideo();
+    setPhaseSync('playing');
+    startTimeChecker();
+  }, [currentVideo.startTime, startTimeChecker]);
+
+  const handleReplay = useCallback(() => {
+    clearInterval(timerRef.current);
+    setPhaseSync('idle');
     setHasAnswered(false);
     setSelectedOption(null);
-    setTimeout(handleStart, 80);
-  };
+    if (ytPlayer.current) {
+      ytPlayer.current.seekTo(currentVideo.startTime, true);
+      ytPlayer.current.pauseVideo();
+    }
+  }, [currentVideo.startTime]);
 
-  const handleOptionClick = (option) => {
+  const handleOptionClick = useCallback((option) => {
     if (hasAnswered) return;
     setSelectedOption(option);
     setHasAnswered(true);
     if (option.isCorrect) setScore(p => p + 10);
-  };
+  }, [hasAnswered]);
 
-  const nextVideo = () => {
-    clearTimeout(timerRef.current);
+  const nextVideo = useCallback(() => {
+    clearInterval(timerRef.current);
     setCurrentIndex(p => (p + 1) % videos.length);
-    setPhase('idle');
+    setPhaseSync('idle');
     setHasAnswered(false);
     setSelectedOption(null);
-  };
+  }, [videos.length]);
 
   const getOptionClass = (option) => {
     if (!hasAnswered) return 'option-btn';
@@ -72,41 +159,44 @@ const App = () => {
 
   return (
     <div className="app-wrapper">
-      {/* ── HEADER ── */}
       <header className="header">
         <div className="logo">
-          <div className="logo-icon">
-            <Film color="white" size={20} />
-          </div>
+          <div className="logo-icon"><Film color="white" size={20} /></div>
           <h1 className="logo-title">Voscreen <span>Türkçe</span></h1>
         </div>
         <div className="header-right">
-          <div className="score-pill">
-            <Trophy size={16} />
-            {score} Puan
-          </div>
+          <div className="score-pill"><Trophy size={16} />{score} Puan</div>
           <div className="counter-pill">{currentIndex + 1} / {videos.length}</div>
         </div>
       </header>
 
-      {/* ── MAIN ── */}
       <main className="main">
-
-        {/* VIDEO */}
         <div className="video-wrap">
-          {phase === 'playing' && embedUrl && (
-            <iframe
-              key={`${currentIndex}-${subtitles}`}
-              src={embedUrl}
-              title="YouTube video player"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
+          {/* YouTube player buraya inject olur */}
+          <div
+            id="yt-player-container"
+            style={{
+              position: 'absolute', inset: 0,
+              width: '100%', height: '100%',
+              opacity: phase === 'quiz' ? 0 : 1,
+              transition: 'opacity 0.3s',
+            }}
+          />
+
+          {/* Quiz kapağı */}
+          {phase === 'quiz' && (
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 15,
+              background: 'linear-gradient(to bottom, #080c18, #0f172a)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem' }}>↓ Soruyu cevapla</span>
+            </div>
           )}
 
-          {/* Bekleme */}
+          {/* Oynat overlay */}
           {phase === 'idle' && (
-            <div className="overlay overlay-idle">
+            <div className="overlay overlay-idle" style={{ zIndex: 20 }}>
               <motion.button
                 className="play-btn"
                 whileHover={{ scale: 1.08 }}
@@ -119,39 +209,20 @@ const App = () => {
             </div>
           )}
 
-          {/* Quiz kapağı */}
-          {phase === 'quiz' && (
-            <div className="overlay overlay-quiz">
-              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>
-                ↓ Soruyu cevapla
-              </span>
-            </div>
-          )}
-
-          {/* Canlı badge */}
           {phase === 'playing' && (
             <div className="live-badge">
-              <span style={{ width: 6, height: 6, background: 'white', borderRadius: '50%', display: 'inline-block' }} />
+              <span style={{ width:6, height:6, background:'white', borderRadius:'50%', display:'inline-block' }} />
               CANLI
             </div>
           )}
         </div>
 
-        {/* KONTROLLER SATIRI: İlerleme + Altyazı toggle */}
+        {/* İlerleme + Altyazı */}
         <div className="controls-row">
           <div className="progress-bar-wrap">
-            <motion.div
-              className="progress-bar-fill"
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.5 }}
-            />
+            <motion.div className="progress-bar-fill" animate={{ width: `${progress}%` }} transition={{ duration: 0.5 }} />
           </div>
-
-          <button
-            className={`subtitle-toggle${subtitles ? ' active' : ''}`}
-            onClick={() => setSubtitles(s => !s)}
-            title={subtitles ? 'Altyazıyı Kapat' : 'Altyazıyı Aç'}
-          >
+          <button className={`subtitle-toggle${subtitles ? ' active' : ''}`} onClick={() => setSubtitles(s => !s)}>
             {subtitles ? <Captions size={15} /> : <CaptionsOff size={15} />}
             {subtitles ? 'Altyazı Açık' : 'Altyazı Kapalı'}
           </button>
@@ -189,10 +260,7 @@ const App = () => {
               </div>
 
               {hasAnswered && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                >
+                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                   <div className="feedback-box">
                     <p className="feedback-label">Orijinal Cümle</p>
                     <p className="feedback-script">"{currentVideo.script}"</p>
@@ -202,10 +270,8 @@ const App = () => {
 
               <div className="actions-row">
                 <button className="btn-replay" onClick={handleReplay}>
-                  <RotateCcw size={15} />
-                  Tekrar İzle
+                  <RotateCcw size={15} /> Tekrar İzle
                 </button>
-
                 {hasAnswered && (
                   <motion.button
                     className="btn-next"
@@ -215,8 +281,7 @@ const App = () => {
                     whileHover={{ y: -2 }}
                     whileTap={{ y: 0 }}
                   >
-                    Sonraki Video
-                    <ArrowRight size={18} />
+                    Sonraki Video <ArrowRight size={18} />
                   </motion.button>
                 )}
               </div>
@@ -225,11 +290,7 @@ const App = () => {
         </AnimatePresence>
       </main>
 
-      <footer className="footer">
-        © 2026 Voscreen Türkçe · İngilizce Öğrenme Platformu
-      </footer>
+      <footer className="footer">© 2026 Voscreen Türkçe · İngilizce Öğrenme Platformu</footer>
     </div>
   );
-};
-
-export default App;
+}
