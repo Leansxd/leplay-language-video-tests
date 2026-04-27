@@ -1,95 +1,109 @@
 import fs from 'fs';
 import path from 'path';
 import Groq from 'groq-sdk';
-import { getSubtitles } from 'youtube-captions-scraper';
+import { YoutubeTranscript } from 'youtube-transcript';
+import 'dotenv/config';
 
-// DİKKAT: GROQ_API_KEY environment variable olarak ayarlanmalıdır
-// Örnek: $env:GROQ_API_KEY="gsk_..." (Windows PowerShell)
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
 async function processVideo(videoUrl) {
   try {
-    const videoId = new URL(videoUrl).searchParams.get('v');
-    if (!videoId) throw new Error('Geçersiz YouTube URL');
+    const videoId = extractVideoId(videoUrl);
+    if (!videoId) throw new Error('Geçersiz YouTube URL.');
 
-    console.log(`🎬 Altyazılar çekiliyor: ${videoId}...`);
-    const captions = await getSubtitles({
-      videoID: videoId,
-      lang: 'en' // İngilizce altyazıları çek
-    });
+    console.log(`🎬 Video ID: ${videoId}`);
+    console.log(`🔍 Altyazılar çekiliyor (Otomatik altyazılar dahil)...`);
+    
+    const captions = await YoutubeTranscript.fetchTranscript(videoId);
 
+    if (!captions || captions.length === 0) {
+      throw new Error('Bu videoda altyazı bulunamadı.');
+    }
+
+    console.log(`✅ ${captions.length} satır altyazı başarıyla çekildi.`);
+
+    // Transcripti AI'nın anlayacağı formata sok
     const transcriptText = captions
-      .map(c => `[${c.start}-${parseFloat(c.start) + parseFloat(c.dur)}] ${c.text}`)
+      .slice(0, 150) // Biraz daha fazla satır alalım
+      .map(c => `[${(c.offset / 1000).toFixed(2)}-${((c.offset + c.duration) / 1000).toFixed(2)}] ${c.text}`)
       .join('\n');
 
-    console.log('🤖 AI analizi başlıyor (Groq)...');
+    console.log('🤖 AI Analizi başlıyor (Groq)...');
     
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         {
           role: 'system',
-          content: `Sen bir dil öğrenme uzmanısın. Sana zaman damgalı İngilizce altyazılar vereceğim. 
-          Bu altyazılardan İngilizce öğrenenler için en uygun, anlamlı ve 5-15 saniye arası süren 3-5 tane kesit seç.
-          Her kesit için doğru bir Türkçe çeviri ve mantıklı ama yanlış bir çeldirici seçenek oluştur.
-          ÇIKTI FORMATI: Sadece saf bir JSON array döndür. Örn: 
-          [{"startTime": 33.5, "endTime": 39.2, "script": "Hello world", "options": [{"text": "Merhaba dünya", "isCorrect": true}, {"text": "Güle güle dünya", "isCorrect": false}]}]`
+          content: `Sen deneyimli bir İngilizce dil öğretmenisin. Sana bir videonun zaman damgalı altyazıları verilecek.
+
+GÖREV: Bu altyazılardan dil öğrenmek için EN KALİTELİ 3-4 kesiti seç ve bunları JSON formatında döndür.
+
+KESIT SEÇME KRİTERLERİ (hepsini mutlaka uygula):
+1. Kesit en az 2, en fazla 4 kelimeden oluşan TAM ve ANLAMLI bir cümle veya cümle grubu olmalı.
+2. Kesit, tek başına anlamlı olmalı (bağlamı olmadan da ne olduğu anlaşılmalı).
+3. Müzik, ses efekti, "[Music]", "[Applause]" gibi altyazıları KESINLIKLE ALMA.
+4. Yarım kalmış cümleleri ALMA. Örnek "because I was..." gibi başlangıçlar olmaz.
+5. Yalnızca altyazıda GERÇEKTEN OLAN metni script olarak yaz. Asla uydurma.
+6. startTime ve endTime, altyazıdaki zaman damgalarına birebir uysun.
+
+ÇEVİRİ KRİTERLERİ:
+1. Doğru çeviri (isCorrect: true) kesinlikle doğal Türkçe olsun, kelime kelime değil.
+2. Yanlış çeviri (isCorrect: false) ZORLAYICI olsun:
+   - Anlam bakımından çok yakın ama kritik bir fark içersin (örn. "gidiyorum" yerine "geliyorum")
+   - Tamamen alakasız veya çok belli bir yanlış YAPMA ("uçuyorum" gibi saçma şeyler olmasın)
+   - Kullanıcı dikkatlice dinlemeden ayırt edemeyeceği kadar yakın olsun
+
+Zorunlu JSON Formatı: {"videos": [{"startTime": 0.0, "endTime": 0.0, "script": "Orijinal İngilizce cümle (HTML temizlenmiş)", "options": [{"text": "Doğal Türkçe çeviri", "isCorrect": true}, {"text": "Çok yakın ama yanlış çeviri", "isCorrect": false}]}]}`
         },
         {
           role: 'user',
-          content: `İşte altyazılar:\n${transcriptText}`
+          content: `Altyazılar:\n${transcriptText}`
         }
       ],
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.1,
+      temperature: 0.3,
       response_format: { type: "json_object" }
     });
 
-    const aiResponse = JSON.parse(chatCompletion.choices[0].message.content);
-    // Bazı modeller JSON object içinde bir key altında array döndürebilir, bunu kontrol et
-    const newVideos = Array.isArray(aiResponse) ? aiResponse : (aiResponse.videos || aiResponse.data || Object.values(aiResponse)[0]);
+    const content = chatCompletion.choices[0].message.content;
+    let aiResponse = JSON.parse(content);
+    const newVideos = aiResponse.videos || [];
 
-    if (!Array.isArray(newVideos)) {
-      throw new Error('AI geçersiz bir format döndürdü.');
-    }
+    if (newVideos.length === 0) throw new Error('AI uygun bir kesit seçemedi.');
 
-    // Video URL'sini ekle (Direkt video linki gerekeceği için YouTube embed linki veya direkt mp4 linki lazım)
-    // Sitenin video player'ı direct mp4 bekliyor, bu yüzden kullanıcıya uyarı verelim.
     const finalVideos = newVideos.map((v, index) => ({
       ...v,
       id: Date.now() + index,
-      url: videoUrl // Not: YouTube URL'leri direkt video player'da (video tag) çalışmaz. 
-                     // Bunun için youtube-dl veya benzeri bir çözüm ya da embed player lazım.
+      url: videoUrl
     }));
 
     updateVideosFile(finalVideos);
-    console.log('✅ İşlem başarıyla tamamlandı! src/data/videos.js güncellendi.');
+    console.log(`🎉 Başarılı! ${finalVideos.length} yeni video eklendi.`);
 
   } catch (error) {
-    console.error('❌ Hata oluştu:', error.message);
+    console.error('❌ HATA:', error.message);
   }
 }
 
-function updateVideosFile(newEntries) {
-  const filePath = path.resolve('src/data/videos.js');
-  let content = fs.readFileSync(filePath, 'utf8');
-  
-  // Mevcut diziyi bul ve yeni elemanları ekle
-  const arrayStart = content.indexOf('[');
-  const arrayEnd = content.lastIndexOf(']');
-  
-  const currentArray = JSON.parse(content.substring(arrayStart, arrayEnd + 1));
-  const updatedArray = [...currentArray, ...newEntries];
-  
-  const newContent = `export const videos = ${JSON.stringify(updatedArray, null, 2)};\n`;
-  fs.writeFileSync(filePath, newContent);
+function extractVideoId(url) {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
 }
 
-// Kullanım örneği: node scripts/processor.js https://www.youtube.com/watch?v=VIDEO_ID
-const url = process.argv[2];
-if (url) {
-  processVideo(url);
-} else {
-  console.log('Lütfen bir YouTube linki verin: node scripts/processor.js <link>');
+function updateVideosFile(newEntries) {
+  const filePath = path.resolve('src/data/videos.json');
+  let currentArray = [];
+  if (fs.existsSync(filePath)) {
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    if (fileContent.trim()) currentArray = JSON.parse(fileContent);
+  }
+  const updatedArray = [...currentArray, ...newEntries];
+  fs.writeFileSync(filePath, JSON.stringify(updatedArray, null, 2));
 }
+
+const url = process.argv[2];
+if (url) processVideo(url);
+else console.log('Kullanım: node scripts/processor.js <youtube_url>');
