@@ -6,7 +6,7 @@
 ![Framer Motion](https://img.shields.io/badge/Framer_Motion-0055FF?style=for-the-badge&logo=framer&logoColor=white)
 ![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white)
 
-Voscreen Clone is a modern, interactive web application designed to make English learning fun and engaging through YouTube video segments. Powered by AI, it automatically analyzes videos, extracts meaningful segments, and generates challenging quizzes.
+Leplay is a modern, interactive web application designed to make English learning fun and engaging through YouTube video segments. Powered by AI, it automatically analyzes videos, extracts meaningful segments, and generates challenging quizzes.
 
 ## ✨ Key Features
 
