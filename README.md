@@ -9,7 +9,7 @@
 
 <br />
 
-## 🌟 Overview
+##  Overview
 
 **Leplay** is a modern, interactive language learning platform designed to help users master English by listening to natural, native conversations from YouTube videos. It recreates the classic "Leplay" experience but supercharges it with an automated **AI processing pipeline**.
 
@@ -18,7 +18,7 @@ Instead of manually curating scenes and writing translations, the backend proces
 ![img](src/assets/sitedenss.png)
 
 
-## ✨ Features
+##  Features
 
 - **Automated Scene Extraction**: Paste any YouTube URL, and the AI automatically scans the subtitles to extract the best 1-2 sentence scenes.
 - **Flawless Localization**: Groq AI acts as a Netflix subtitle editor to guarantee complete, idiomatic Turkish translations without missing any sentences.
@@ -26,7 +26,7 @@ Instead of manually curating scenes and writing translations, the backend proces
 - **Perfect Video Sync**: Direct integration with the YouTube IFrame Player API ensures videos pause exactly at the millisecond the scene ends.
 - **Premium UI/UX**: Built with React and Framer Motion, featuring glassmorphism, fluid animations, and a responsive, immersive dark-mode design.
 
-## 🚀 Getting Started
+##  Getting Started
 
 Follow these steps to run the project locally on your machine.
 
@@ -67,7 +67,7 @@ Open your browser and navigate to the link provided in the terminal (usually `ht
 
 ---
 
-## 🧠 Adding New Videos (AI Processor)
+##  Adding New Videos (AI Processor)
 
 The core strength of Leplay is its ability to transform any YouTube video into a perfect English comprehension test in seconds. To feed the system with new content, open a separate terminal window and use the following command:
 
@@ -79,7 +79,7 @@ node scripts/processor.js "https://www.youtube.com/watch?v=Jd10x8LiuBc"
 ![img](src/assets/ss.png)
 
 
-### ⚙️ How the Pipeline Works
+### ️ How the Pipeline Works
 
 | Stage | What it Does | Technology Used |
 | :--- | :--- | :--- |

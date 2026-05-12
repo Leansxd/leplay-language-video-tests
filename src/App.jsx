@@ -16,7 +16,7 @@ const shuffle = (arr) => {
   return a;
 };
 
-// YouTube IFrame API'yi yükle
+
 function loadYTApi() {
   return new Promise((resolve) => {
     if (window.YT && window.YT.Player) { resolve(window.YT); return; }
@@ -49,13 +49,13 @@ export default function App() {
   const currentVideo = videos[currentIndex];
   const videoId = getVideoId(currentVideo.url);
 
-  // faz değişikliklerini ref'e yansıt
+
   const setPhaseSync = (p) => {
     phaseRef.current = p;
     setPhase(p);
   };
 
-  // Belirli aralıklarla zamanı kontrol et
+
   const startTimeChecker = useCallback(() => {
     clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
@@ -69,14 +69,14 @@ export default function App() {
     }, 100);
   }, [currentVideo.endTime]);
 
-  // YouTube player'ı başlat veya yenile
+
   useEffect(() => {
     let cancelled = false;
 
     loadYTApi().then((YT) => {
       if (cancelled) return;
 
-      // Eski player'ı temizle
+
       if (ytPlayer.current) {
         ytPlayer.current.destroy();
         ytPlayer.current = null;
@@ -96,11 +96,11 @@ export default function App() {
         events: {
           onReady: (e) => {
             e.target.seekTo(currentVideo.startTime, true);
-            e.target.pauseVideo(); // Otomatik başlamayı engelle
+            e.target.pauseVideo();
           },
           onStateChange: (e) => {
             const YTState = window.YT.PlayerState;
-            // Video gerçekten oynamaya başladığında timer'ı başlat (Sync sorunu çözümü)
+
             if (e.data === YTState.PLAYING && phaseRef.current === 'playing') {
               clearInterval(timerRef.current);
               timerRef.current = setInterval(() => {
@@ -222,7 +222,7 @@ export default function App() {
 
       <main className="main">
         <div className="video-wrap">
-          {/* YouTube player buraya inject olur */}
+          {}
           <div
             id="yt-player-container"
             style={{
@@ -233,7 +233,7 @@ export default function App() {
             }}
           />
 
-          {/* Quiz kapağı */}
+          {}
           {phase === 'quiz' && (
             <div style={{
               position: 'absolute', inset: 0, zIndex: 15,
@@ -258,7 +258,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Oynat overlay */}
+          {}
           {phase === 'idle' && (
             <div className="overlay overlay-idle" style={{ zIndex: 20 }}>
               <motion.button
@@ -281,7 +281,7 @@ export default function App() {
           )}
         </div>
 
-        {/* İlerleme + Altyazı */}
+        {}
         <div className="controls-row">
           <div className="progress-bar-wrap">
             <motion.div className="progress-bar-fill" animate={{ width: `${progress}%` }} transition={{ duration: 0.5 }} />
@@ -292,7 +292,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* QUIZ */}
+        {}
         <AnimatePresence mode="wait">
           {phase === 'quiz' && (
             <motion.div

@@ -25,7 +25,7 @@ async function processVideo(videoUrl) {
 
     console.log(`✅ ${captions.length} satır altyazı çekildi.`);
 
-    // Her satıra index ver, daha geniş bir aralık al (400 satır ~15-20 dk video)
+
     const lines = captions.slice(0, 400).map((c, i) => ({
       i,
       start: parseFloat((c.offset / 1000).toFixed(2)),
@@ -33,7 +33,7 @@ async function processVideo(videoUrl) {
       text: c.text.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim(),
     }));
 
-    // Transcript'i bölümlere ayır (Başlangıç, Orta, Son)
+
     const third = Math.floor(lines.length / 3);
     const sections = [
       { label: 'BAŞLANGIÇ (0-%33)', lines: lines.slice(0, third) },
@@ -48,7 +48,7 @@ async function processVideo(videoUrl) {
 
     console.log('🤖 AI Aşama 1: Sahneler seçiliyor...');
 
-    // AŞAMA 1: Sadece sahne seçimi (Çeviri yok)
+
     const selectionCompletion = await groq.chat.completions.create({
       messages: [
         {
@@ -76,7 +76,7 @@ SADECE JSON döndür. Format: {"clips": [{"startLine": 0, "endLine": 1}]}`
 
     const finalVideos = [];
 
-    // AŞAMA 2 & 3: Google Translate ile Çeviri + AI ile Tuzak Şık Üretimi
+
     for (let i = 0; i < selectedClips.length; i++) {
       const clip = selectedClips[i];
       const startLine = lines[clip.startLine];
@@ -84,15 +84,15 @@ SADECE JSON döndür. Format: {"clips": [{"startLine": 0, "endLine": 1}]}`
 
       if (!startLine || !endLine) continue;
 
-      // Satırları birleştir ve gereksiz yeni satırları temizle
+
       const script = lines.slice(clip.startLine, clip.endLine + 1)
         .map(l => l.text.replace(/\n/g, ' ').trim())
         .join(' ')
-        .replace(/\s+/g, ' '); // Çift boşlukları temizle
+        .replace(/\s+/g, ' ');
       
       console.log(`\n⏳ İşleniyor [${startLine.start}s]: "${script.substring(0, 40)}..."`);
       
-      // AŞAMA 2: AI ile Mükemmel Çeviri ve Tuzak Şık Üretimi
+
       const translationCompletion = await groq.chat.completions.create({
         messages: [
           {
@@ -133,7 +133,7 @@ Format: {"correct": "Mükemmel doğal çeviri.", "wrong": "Tuzak bozuk çeviri."
       console.log(`  ✓ Doğru: ${correctTranslation}`);
       console.log(`  ✗ Yanlış: ${wrongTranslation}`);
 
-      // Seçenekleri rastgele karıştır
+
       const options = [
         { text: correctTranslation, isCorrect: true },
         { text: wrongTranslation, isCorrect: false }
